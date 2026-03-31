@@ -113,8 +113,6 @@ with st.sidebar:
     st.header("AI 가이드")
     st.info("오늘/내일 급식과 일정을 물어보세요!")
     st.write("예: '내일 점심 뭐야?', '기말고사 언제야?'")
-    st.write("제발 제대로 대답하게 해주세요")
-    st.write("이 미친년이 지랄하네")
 
 st.title("🏫 영광고등학교 AI 비서 V2.4 ")
 st.markdown("---")
