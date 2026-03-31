@@ -4,8 +4,8 @@ import requests
 from datetime import datetime, timedelta
 
 # --- 1. 설정 (본인의 API 키를 입력하세요) ---
-GOOGLE_API_KEY = "AIzaSyAoLO0yzG17rD3kvW2hK0-LDa2_MMh_scg" 
-NEIS_API_KEY = "73119f2bf3604e4e9119d629b367ead7"
+GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"] 
+NEIS_API_KEY = st.secrets["NEIS_API_KEY"]
 
 genai.configure(api_key=GOOGLE_API_KEY)
 model = genai.GenerativeModel('models/gemini-flash-latest')
@@ -110,11 +110,13 @@ st.set_page_config(page_title="영광고 AI 비서", page_icon="🏫", layout="c
 
 # 사이드바 (정보창)
 with st.sidebar:
-    st.header("🏫 영광고 AI 가이드")
+    st.header("AI 가이드")
     st.info("오늘/내일 급식과 일정을 물어보세요!")
     st.write("예: '내일 점심 뭐야?', '기말고사 언제야?'")
+    st.write("제발 제대로 대답하게 해주세요")
+    st.write("이 미친년이 지랄하네")
 
-st.title("🏫 영광고등학교 AI 비서 V2.5")
+st.title("🏫 영광고등학교 AI 비서 V2.4 ")
 st.markdown("---")
 
 # 세션 상태 초기화 (대화 기록)
