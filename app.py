@@ -2,95 +2,24 @@ import streamlit as st
 import google.generativeai as genai
 import requests
 from datetime import datetime, timedelta
+import re
 
-# --- 1. 설정 (본인의 API 키를 입력하세요) ---
+# --- 1. 설정 ---
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"] 
 NEIS_API_KEY = st.secrets["NEIS_API_KEY"]
 
 genai.configure(api_key=GOOGLE_API_KEY)
 model = genai.GenerativeModel('models/gemini-3.1-flash-lite-preview')
 
-# --- 2. 수동 입력 학사일정 데이터 (1, 2학기 통합) ---
-SCHOOL_PLAN = """
-[영광고등학교 1학기 주요 학사일정]
-3월 1일: 3.1절
-3월 3일: 입학식
-3월 17일: 기초학력 진단평가(1, 2학년)
-3월 19일: 학교설명회
-3월 24일: 전국연합모의고사(1, 2, 3학년)
-3월 30일: 재량휴업일
-4월 3일 ~ 4월 5일: 도민체전
-4월 7일: 영어듣기평가(1학년)
-4월 8일: 영어듣기평가(2학년)
-4월 9일: 영어듣기평가(3학년)
-4월 10일: 개인체력평가(PAPS)
-4월 28일 ~ 5월 1일: 1학기 중간고사
-5월 7일: 전국연합고사(3학년)
-5월 14일: 현장체험학습
-5월 15일: 한마음 체육축전
-5월 20일: 수학소프트웨어 활용대회
-5월 21일: 진로체험(1, 2학년)
-5월 24일: 부처님오신날
-5월 25일: 부처님오신날(대체휴일)
-5월 26일 ~ 29일: 국제교류
-6월 3일: 지방선거일
-6월 4일: 대입수능모의평가(3학년)
-6월 4일: 전국연합모의고사(1, 2학년)
-6월 6일: 현충일
-6월 29일 ~ 7월 2일: 1학기 기말고사
-7월 8일: 전국연합고사(3학년)
-7월 14일: 감성문학제
-7월 15일: 빅데이터를 활용 프로젝트
-7월 16일 ~ 17일: 해커톤대회
-7월 21일: 방학식
-8월 15일: 광복절
-8월 17일: 광복절(대체휴일)
-8월 18일: 개학일
-8월 27일: 경북모의평가(3학년)
+# --- 2. 나이스 API 함수들 ---
 
-[영광고등학교 2학기 주요 학사일정]
-9월 2일: 대입수능모의평가(3학년)
-9월 2일: 전국연합고사(1, 2학년)
-9월 8일: 영어듣기평가(1학년)
-9월 9일: 영어듣기평가(2학년)
-9월 10일: 영어듣기평가(3학년)
-9월 18일: 2학기 중간(1, 2학년)
-9월 18일: 2학기 기말고사(3학년)
-9월 21일: 2학기 기말고사(3학년)
-9월 21일: 2학기 중간(1, 2학년)
-9월 22일: 2학기 기말고사(3학년)
-9월 22일: 2학기 중간(1, 2학년)
-9월 23일: 2학기 기말고사(3학년)
-9월 23일: 2학기 중간(1, 2학년)
-9월 24일: 추석연휴
-9월 25일: 추석
-9월 26일: 추석연휴
-10월 3일: 개천절
-10월 7일: 학부모초청 공개수업의 날
-10월 9일: 한글날
-10월 12일 ~ 14일: 1학년 야영
-10월 12일 ~ 15일: 2학년 수학여행
-10월 20일: 전국연합고사(1, 2, 3학년)
-10월 28일: 경북모의평가(2학년)
-10월 30일: 경제수학 과학캠프(예술제)
-11월 4일: 영어신문제작 프로젝트
-11월 18일: 수능 예비소집일
-11월 19일: 대학수학능력시험일
-11월 20일: 재량휴업일
-12월 15일 ~ 12월 18일: 2학기 기말고사(1,2학년)
-12월 25일: 성탄절
-1월 1일: 신정
-1월 7일: 졸업식
-1월 8일: 종업식
-"""
-
-# --- 3. 날짜별 급식 가져오기 함수 ---
+# [급식 정보]
 def get_meal_by_day(target_date):
     url = "https://open.neis.go.kr/hub/mealServiceDietInfo"
     params = {
         "KEY": NEIS_API_KEY, "Type": "json",
-        "ATPT_OFCDC_SC_CODE": "R10", # 경북교육청
-        "SD_SCHUL_CODE": "8750188",   # 영광고등학교
+        "ATPT_OFCDC_SC_CODE": "R10", 
+        "SD_SCHUL_CODE": "8750188",  
         "MLSV_YMD": target_date
     }
     try:
@@ -101,84 +30,148 @@ def get_meal_by_day(target_date):
             for r in rows:
                 meal_result += f"**[{r['MMEAL_SC_NM']}]**\n{r['DDISH_NM'].replace('<br/>', ', ')}\n\n"
             return meal_result
-        return "해당 날짜의 급식 정보가 나이스에 등록되어 있지 않습니다."
+        return "해당 날짜의 급식 정보가 없습니다."
     except:
-        return "급식 서버 연결에 실패했습니다."
+        return "급식 서버 연결 실패"
 
-# --- 4. 웹 화면 구성 ---
+# [실시간 학사일정]
+def get_school_plan(start_date, end_date):
+    url = "https://open.neis.go.kr/hub/SchoolSchedule"
+    params = {
+        "KEY": NEIS_API_KEY, "Type": "json",
+        "ATPT_OFCDC_SC_CODE": "R10",
+        "SD_SCHUL_CODE": "8750188",
+        "AA_FROM_YMD": start_date,
+        "AA_TO_YMD": end_date
+    }
+    try:
+        res = requests.get(url, params=params).json()
+        if "SchoolSchedule" in res:
+            rows = res['SchoolSchedule'][1]['row']
+            plan_result = ""
+            for r in rows:
+                plan_result += f"- {r['AA_YMD']}: {r['EVENT_NM']}\n"
+            return plan_result
+        return "조회된 학사일정이 없습니다."
+    except:
+        return "학사일정 서버 연결 실패"
+
+# [학년/반별 시간표]
+def get_timetable(target_date, grade, class_nm):
+    url = "https://open.neis.go.kr/hub/hisTimetable"
+    params = {
+        "KEY": NEIS_API_KEY, "Type": "json",
+        "ATPT_OFCDC_SC_CODE": "R10",
+        "SD_SCHUL_CODE": "8750188",
+        "ALL_TI_YMD": target_date,
+        "GRADE": grade,
+        "CLASS_NM": class_nm
+    }
+    try:
+        res = requests.get(url, params=params).json()
+        if "hisTimetable" in res:
+            rows = res['hisTimetable'][1]['row']
+            
+            # 중요: 가져온 데이터 중 정확히 해당 학년과 반인 것만 필터링 (숫자/문자 타입 대응)
+            filtered_rows = [
+                r for r in rows 
+                if str(r['GRADE']) == str(grade) and str(r['CLASS_NM']) == str(class_nm)
+            ]
+            
+            if not filtered_rows:
+                return f"{grade}학년 {class_nm}반의 시간표 정보가 없습니다."
+
+            # 교시 순서대로 정렬
+            filtered_rows.sort(key=lambda x: int(x['PERIO']))
+            
+            table_result = f"[{grade}학년 {class_nm}반 시간표]\n"
+            for r in filtered_rows:
+                table_result += f"{r['PERIO']}교시: {r['ITRT_CNTNT']}\n"
+            return table_result
+        
+        return f"{grade}학년 {class_nm}반의 시간표 정보가 없습니다."
+    except:
+        return "시간표 서버 연결 실패"
+
+# --- 3. 웹 화면 구성 ---
 st.set_page_config(page_title="영광고 AI 비서", page_icon="🏫", layout="centered")
 
-# 사이드바 (정보창)
 with st.sidebar:
     st.header("🏫 영광고 AI 가이드")
-    st.info("오늘/내일 급식과 일정을 물어보세요!")
-    st.write("예: '내일 점심 뭐야?', '기말고사 언제야?'")
+    st.info("오늘/내일 급식, 일정, 시간표를 물어보세요!")
+    st.write("예: '내일 점심 뭐야?', '기말고사 언제야?', '1학년 1반 내일 시간표 알려줘'")
 
-st.title("🏫 영광고등학교 AI 비서 V2.5")
+st.title("🏫 영광고등학교 AI 비서")
 st.markdown("---")
 
-# 세션 상태 초기화 (대화 기록)
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# 기존 대화 표시
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# --- 5. 질문 처리 로직 ---
+# --- 질문 처리 및 답변 생성 ---
 if prompt := st.chat_input("질문을 입력하세요..."):
-    # 사용자 질문 표시 및 저장
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # AI 답변 생성
     with st.chat_message("assistant"):
-        with st.spinner("영광고 데이터를 분석 중입니다..."):
-            # 날짜 계산 (오늘/내일/어제 판단)
+        with st.spinner("영광고 실시간 데이터를 조회 중입니다..."):
+            # 날짜 계산
             now = datetime.now()
-            target_date_str = now.strftime("%Y%m%d")
-            display_date = now.strftime("%Y년 %m월 %d일")
-            
+            target_date = now
             if "내일" in prompt:
-                target_date_str = (now + timedelta(days=1)).strftime("%Y%m%d")
-                display_date = (now + timedelta(days=1)).strftime("%Y년 %m월 %d일")
+                target_date = now + timedelta(days=1)
             elif "어제" in prompt:
-                target_date_str = (now - timedelta(days=1)).strftime("%Y%m%d")
-                display_date = (now - timedelta(days=1)).strftime("%Y년 %m월 %d일")
+                target_date = now - timedelta(days=1)
+            
+            target_date_str = target_date.strftime("%Y%m%d")
+            display_date = target_date.strftime("%Y년 %m월 %d일")
 
-            # 데이터 수집
+            # 학년/반 추출 로직
+            # 기본값은 1학년 1반으로 설정하되 질문에 숫자가 있으면 업데이트
+            target_grade = "1"
+            target_class = "1"
+            
+            grade_find = re.search(r'(\d)학년', prompt)
+            class_find = re.search(r'(\d+)반', prompt)
+            
+            if grade_find: target_grade = grade_find.group(1)
+            if class_find: target_class = class_find.group(1)
+
+            # 데이터 수집 (API 호출)
             meal_info = get_meal_by_day(target_date_str)
+            # 학사일정 60일치 조회
+            plan_info = get_school_plan(now.strftime("%Y%m%d"), (now + timedelta(days=60)).strftime("%Y%m%d"))
+            timetable_info = get_timetable(target_date_str, target_grade, target_class)
+
             weekday_list = ["월", "화", "수", "목", "금", "토", "일"]
-            today_weekday = weekday_list[now.weekday()]
-            
-            # AI에게 보낼 최종 프롬프트
+            current_weekday = weekday_list[target_date.weekday()]
+
+            # 최종 프롬프트 생성
             full_prompt = f"""
-            너는 영광고등학교 AI 비서야.
-            사용자가 묻는 시점의 오늘 날짜는 {now.strftime('%Y년 %m월 %d일')}({today_weekday}요일)이야.
+            너는 영광고등학교 AI 도우미. 친절하고 학생들에게 도움이 되는 말투로 대답해줘.
             
-            [조회된 급식 정보 ({display_date})]
-            {meal_info}
-            
-            [수동 입력 학사일정]
-            {SCHOOL_PLAN}
+            [조회 기준 정보]
+            - 기준 날짜: {display_date}({current_weekday}요일)
+            - 급식 정보: {meal_info}
+            - 학사 일정: {plan_info}
+            - 시간표 정보({target_grade}학년 {target_class}반): {timetable_info}
             
             [지침]
-            1. 질문에 "내일"이 포함되면 위 급식 정보가 {display_date}의 것임을 인지하고 답변해줘.
-            2. 학사일정 질문에는 날짜를 계산해서 "몇 일 남았다"는 식으로 답해줘.
-            3. 만약 "달님"이라고 질문하면 "멍청이" 라고 답해줘.
-            4. 만약 "권호재" 라고 질문하면 "돼지" 라고 답해줘.
-            5. 질문한 것만 답변해줘 급식을 물어보면 급식만 행사나 일정을 물어보면 학사일정만 답변해줘.
-
+            1. 시간표 질문의 경우 반드시 "{target_grade}학년 {target_class}반" 기준임을 명시하고 보여줘.
+            2. 학사일정 질문(시험, 방학 등)은 기준 날짜와 대조해서 D-Day를 알려주면 좋아.
+            3. 만약 시간표나 급식 정보가 "정보가 없습니다"라면, 주말이거나 아직 학교에서 등록하지 않은 경우라고 설명해줘.
             
             질문: {prompt}
             """
-            
+
             try:
                 response = model.generate_content(full_prompt)
                 answer = response.text
                 st.markdown(answer)
                 st.session_state.messages.append({"role": "assistant", "content": answer})
             except Exception as e:
-                st.error(f"AI 답변 생성 중 오류 발생: {e}")
+                st.error(f"오류가 발생했습니다: {e}")
